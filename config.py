@@ -8,6 +8,7 @@ PythonAnywhere's persistent storage (/home/<username>/...), never under /tmp.
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -26,6 +27,24 @@ def _env(name: str, default):
     return value
 
 
+def _secret_key(instance_dir: Path) -> str:
+    """SECRET_KEY from the environment, else a random key generated once and kept in
+    instance/secret_key (git-ignored), so no secret ever has to be written by hand."""
+    if os.environ.get("SECRET_KEY"):
+        return os.environ["SECRET_KEY"]
+    path = instance_dir / "secret_key"
+    try:
+        if path.exists():
+            return path.read_text().strip()
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        key = secrets.token_hex(32)
+        path.write_text(key)
+        os.chmod(path, 0o600)
+        return key
+    except OSError:
+        return secrets.token_hex(32)  # read-only filesystem: per-process key
+
+
 class Config:
     # --- Paths (all persistent, relative to the project) ---------------------------
     BASE_DIR = BASE_DIR
@@ -35,7 +54,7 @@ class Config:
     UPLOAD_DIR = Path(_env("HYBRID_IDS_UPLOAD_DIR", str(BASE_DIR / "data" / "uploads")))
 
     # --- Flask -----------------------------------------------------------------------
-    SECRET_KEY = _env("SECRET_KEY", "dev-only-change-me")
+    SECRET_KEY = _secret_key(INSTANCE_DIR)
     SQLALCHEMY_DATABASE_URI = _env(
         "DATABASE_URL", "sqlite:///" + str((INSTANCE_DIR / "hybrid_ids.db").as_posix())
     )

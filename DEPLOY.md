@@ -116,8 +116,9 @@ delete everything in it, and paste the contents of `pythonanywhere_wsgi.py` from
 repository. Then:
 
 1. Replace `<username>`.
-2. Replace the `SECRET_KEY` placeholder with the output of
-   `python -c "import secrets; print(secrets.token_hex(32))"`.
+2. Nothing else. `SECRET_KEY` is generated automatically on first start and stored in
+   `instance/secret_key` (git-ignored, mode 600). Set it in the WSGI file only if you want
+   to manage it yourself.
 
 In short, the file does this:
 
@@ -125,7 +126,6 @@ In short, the file does this:
 import os, sys
 PROJECT_HOME = "/home/<username>/hybrid_ids"
 sys.path.insert(0, PROJECT_HOME); os.chdir(PROJECT_HOME)
-os.environ.setdefault("SECRET_KEY", "...")
 os.environ.setdefault("ENFORCER_MODE", "simulate")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{PROJECT_HOME}/instance/hybrid_ids.db")
 from app import create_app
