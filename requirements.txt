@@ -4,8 +4,8 @@
 # IMPORTANT: the .joblib model files are only guaranteed to load with the SAME
 # scikit-learn / numpy versions they were trained with. Keep these pins identical
 # on the machine you train on and on PythonAnywhere.
-numpy==1.26.4
-pandas==2.2.3
+numpy==2.1.0
+pandas==2.2.2
 scikit-learn==1.5.2
 scipy==1.14.1
 joblib==1.4.2
