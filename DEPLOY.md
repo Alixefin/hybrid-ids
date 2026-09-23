@@ -52,40 +52,36 @@ cd ~ && unzip hybrid_ids.zip
 
 Either way you should end up with `/home/<username>/hybrid_ids/run.py`.
 
-## 2. Create a virtualenv and install the dependencies
+## 2. Create a virtualenv that reuses PythonAnywhere's scientific stack
+
+PythonAnywhere's Python 3.11 image already ships numpy, pandas, scipy, scikit-learn,
+joblib and Flask. `requirements.txt` is pinned to exactly those versions (numpy 2.1.0,
+pandas 2.2.2, scipy 1.14.1, scikit-learn 1.5.2, joblib 1.4.2, Flask 3.0.3), so the venv
+can inherit them. It then needs only about 30 MB instead of about 390 MB of the
+512 MB free quota.
 
 ```bash
-mkvirtualenv --python=/usr/bin/python3.11 hybrid-ids
-pip install --no-cache-dir -r ~/hybrid_ids/requirements.txt
+/usr/local/bin/python3.11 -m venv --system-site-packages ~/.virtualenvs/hybrid-ids
+source ~/.virtualenvs/hybrid-ids/bin/activate
+pip install --no-cache-dir Flask==3.0.3 Werkzeug==3.0.6 Flask-Login==0.6.3 Flask-SQLAlchemy==3.1.1 SQLAlchemy==2.0.36 APScheduler==3.10.4
+python -c "import numpy, pandas, sklearn; print(numpy.__version__, pandas.__version__, sklearn.__version__)"   # 2.1.0 2.2.2 1.5.2
 ```
 
-* Inside a virtualenv, do **not** add `--user`. Use `pip install --user -r requirements.txt`
-  only if you decide not to use a virtualenv, which is not recommended because the web app
-  then shares packages with your whole account.
-* `--no-cache-dir` matters on the free tier: 512 MB of disk. The pinned packages take
-  **about 390 MB** installed (scipy 160 MB with its bundled libraries, pandas 75 MB,
-  numpy 70 MB, scikit-learn 50 MB), which leaves roughly 100 MB for code, models, uploads
-  and the database. Nothing is compiled: every pinned package has a `manylinux` wheel for
-  Python 3.11.
-* `requirements-dev.txt` (pytest) isn't needed on the server.
-* Check your usage with `du -sh ~/.virtualenvs/hybrid-ids`, and see the *Account* page for the quota.
-  If you run short, `rm -rf ~/.cache/pip`.
+Notes from the first real deployment:
 
-Later consoles: `workon hybrid-ids`.
-
-**If the install runs out of quota**, reuse the scientific stack that PythonAnywhere
-already ships with its Python 3.11 image instead of installing a second copy:
-
-```bash
-rmvirtualenv hybrid-ids
-mkvirtualenv --python=/usr/bin/python3.11 --system-site-packages hybrid-ids
-python -c "import numpy, pandas, scipy, sklearn, joblib; print(numpy.__version__, pandas.__version__, scipy.__version__, sklearn.__version__, joblib.__version__)"
-pip install --no-cache-dir Flask==3.0.3 Flask-Login==0.6.3 Flask-SQLAlchemy==3.1.1 SQLAlchemy==2.0.36 APScheduler==3.10.4
-```
-
-Then, **on your own machine**, change the numpy / pandas / scipy / scikit-learn / joblib
-pins in `requirements.txt` to the versions printed above, reinstall, and re-run
-`train_models.py`, so the `.joblib` files match the server's scikit-learn.
+* **Use the standard-library `venv`, not `mkvirtualenv --system-site-packages`.** The
+  virtualenvwrapper-built env could not `import math` (a stdlib/lib-dynload mismatch).
+  `/usr/local/bin/python3.11 -m venv` works. Later consoles: `source ~/.virtualenvs/hybrid-ids/bin/activate`.
+* **Run Flask as `python -m flask`, not `flask`.** Flask is already installed system-wide,
+  so pip doesn't create a `flask` script in the venv. A bare `flask` then resolves to
+  the *Python 3.13* system install (scikit-learn 1.6), which prints
+  `InconsistentVersionWarning` when it loads the models.
+* If PythonAnywhere upgrades its image, check the printed versions against `requirements.txt`.
+  If they differ, change the pins, reinstall locally and re-run `train_models.py`, so the
+  `.joblib` files match the server's scikit-learn.
+* A full, self-contained install also works
+  (`pip install --no-cache-dir -r requirements.txt` in a venv without `--system-site-packages`),
+  but it uses about 390 MB of the quota.
 
 ## 3. Upload the trained models (and a demo CSV)
 
@@ -111,9 +107,15 @@ Then, on the web app's configuration page:
 
 ## 5. Point the WSGI file at the app factory
 
-Web tab → click the **WSGI configuration file** link (`/var/www/<username>_pythonanywhere_com_wsgi.py`),
-delete everything in it, and paste the contents of `pythonanywhere_wsgi.py` from this
-repository. Then:
+Replace the generated WSGI file with this repository's template in one command (the
+file name is your username in lower case):
+
+```bash
+sed 's#<username>#<Username>#' ~/hybrid_ids/pythonanywhere_wsgi.py > /var/www/<username>_pythonanywhere_com_wsgi.py
+```
+
+Or, on the Web tab, click the **WSGI configuration file** link, delete everything in it,
+paste the contents of `pythonanywhere_wsgi.py`, and then:
 
 1. Replace `<username>`.
 2. Nothing else. `SECRET_KEY` is generated automatically on first start and stored in
@@ -140,11 +142,11 @@ PythonAnywhere's persistent storage. **Never put it under `/tmp`**, which is wip
 In a Bash console:
 
 ```bash
-workon hybrid-ids
+source ~/.virtualenvs/hybrid-ids/bin/activate
 cd ~/hybrid_ids
 export DATABASE_URL="sqlite:////home/<username>/hybrid_ids/instance/hybrid_ids.db"
-flask --app run.py init-db          # tables + default policy table + whitelist + registers models_store/
-flask --app run.py create-admin     # prompts for username / email / password (min. 10 chars)
+python -m flask --app run.py init-db          # tables + default policy table + whitelist + registers models_store/
+python -m flask --app run.py create-admin     # prompts for username / email / password (min. 10 chars)
 ```
 
 (`DATABASE_URL` above uses four slashes: `sqlite:///` plus the absolute path.)
@@ -165,7 +167,7 @@ The free tier can't keep an APScheduler thread alive, so the scheduler is off
 * optionally once a day with the free tier's single **scheduled task** (Tasks tab):
 
   ```
-  cd /home/<username>/hybrid_ids && DATABASE_URL=sqlite:////home/<username>/hybrid_ids/instance/hybrid_ids.db /home/<username>/.virtualenvs/hybrid-ids/bin/flask --app run.py expire-actions
+  cd /home/<username>/hybrid_ids && DATABASE_URL=sqlite:////home/<username>/hybrid_ids/instance/hybrid_ids.db /home/<username>/.virtualenvs/hybrid-ids/bin/python -m flask --app run.py expire-actions
   ```
 
 In simulate mode nothing is ever actually blocked, so expiry only updates statuses.
