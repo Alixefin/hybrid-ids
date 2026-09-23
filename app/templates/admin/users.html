@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1 class="h3">Users</h1>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <table class="table table-sm align-middle">
+      <thead class="table-light"><tr><th>#</th><th>Username</th><th>Email</th><th>Role</th><th>State</th><th>Created</th><th>Manage</th></tr></thead>
+      <tbody>
+      {% for u in rows %}{% set st = status[u.user_id] %}
+        <tr>
+          <td>{{ u.user_id }}</td><td>{{ u.username }}{% if u.user_id == current_user.user_id %} <span class="badge text-bg-light border">you</span>{% endif %}</td>
+          <td class="small">{{ u.email or '-' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin.user_update', user_id=u.user_id) }}" class="d-flex gap-1">
+              {{ m.csrf() }}<input type="hidden" name="op" value="role">
+              <select class="form-select form-select-sm w-auto" name="role" aria-label="Role">
+                {% for r in roles %}<option {{ 'selected' if u.role == r }}>{{ r }}</option>{% endfor %}</select>
+              <button class="btn btn-sm btn-outline-primary" type="submit">Set</button>
+            </form>
+          </td>
+          <td>{% if st.locked %}<span class="badge text-bg-danger">locked</span>
+              {% elif st.failed %}<span class="badge text-bg-warning">{{ st.failed }} failed</span>
+              {% else %}<span class="badge text-bg-success">ok</span>{% endif %}</td>
+          <td class="small">{{ u.created_at|dt('%Y-%m-%d') }}</td>
+          <td class="text-nowrap">
+            {% if st.locked or st.failed %}
+            <form method="post" action="{{ url_for('admin.user_update', user_id=u.user_id) }}" class="d-inline">
+              {{ m.csrf() }}<input type="hidden" name="op" value="unlock">
+              <button class="btn btn-sm btn-outline-success" type="submit">Unlock</button></form>
+            {% endif %}
+            <details class="d-inline-block">
+              <summary class="btn btn-sm btn-outline-secondary">Reset password</summary>
+              <form method="post" action="{{ url_for('admin.user_update', user_id=u.user_id) }}" class="d-flex gap-1 mt-1">
+                {{ m.csrf() }}<input type="hidden" name="op" value="password">
+                <input class="form-control form-control-sm" type="password" name="password" minlength="10" placeholder="new password" required aria-label="New password">
+                <button class="btn btn-sm btn-primary" type="submit">Save</button></form>
+            </details>
+            {% if u.user_id != current_user.user_id %}
+            <form method="post" action="{{ url_for('admin.user_update', user_id=u.user_id) }}" class="d-inline">
+              {{ m.csrf() }}<input type="hidden" name="op" value="delete">
+              <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Delete user {{ u.username }}? Their audit history is kept.">Delete</button></form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="col-lg-4">
+    <form method="post" action="{{ url_for('admin.user_create') }}" class="card card-body">
+      {{ m.csrf() }}
+      <h2 class="h6">New user</h2>
+      <div class="mb-2"><label class="form-label small" for="nu">Username</label><input class="form-control" id="nu" name="username" pattern="[A-Za-z0-9_.\-]{3,64}" required></div>
+      <div class="mb-2"><label class="form-label small" for="ne">Email</label><input class="form-control" id="ne" name="email" type="email"></div>
+      <div class="mb-2"><label class="form-label small" for="np">Password (min. 10)</label><input class="form-control" id="np" name="password" type="password" minlength="10" required></div>
+      <div class="mb-3"><label class="form-label small" for="nr">Role</label>
+        <select class="form-select" id="nr" name="role">{% for r in roles %}<option>{{ r }}</option>{% endfor %}</select>
+        <div class="form-text">Analysts can view data, change alert status and run offline evaluations. Admins can also manage models, policies, the whitelist, users and manual responses.</div></div>
+      <button class="btn btn-primary" type="submit">Create user</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

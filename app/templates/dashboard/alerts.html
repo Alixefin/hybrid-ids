@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Alerts</h1>
+
+<form class="card card-body mb-3" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label small" for="category">Threat class</label>
+      <select class="form-select form-select-sm" id="category" name="category">
+        <option value="">All</option>
+        {% for c in threat_categories %}<option {{ 'selected' if f.category == c }}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small" for="severity">Severity</label>
+      <select class="form-select form-select-sm" id="severity" name="severity">
+        <option value="">All</option>
+        {% for s in severities %}<option {{ 'selected' if f.severity == s }}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small" for="status">Status</label>
+      <select class="form-select form-select-sm" id="status" name="status">
+        <option value="">All</option>
+        {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if f.status == s }}>{{ s.replace('_', ' ') }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small" for="ip">IP contains</label>
+      <input class="form-control form-control-sm" id="ip" name="ip" value="{{ f.ip }}" placeholder="172.16.">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label small" for="min_conf">Min p</label>
+      <input class="form-control form-control-sm" id="min_conf" name="min_conf" value="{{ f.min_conf }}" placeholder="0.7">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label small" for="date_from">From</label>
+      <input class="form-control form-control-sm" id="date_from" name="date_from" type="date" value="{{ f.date_from }}">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label small" for="date_to">To</label>
+      <input class="form-control form-control-sm" id="date_to" name="date_to" type="date" value="{{ f.date_to }}">
+    </div>
+    <div class="col-md-1">
+      <div class="form-check small">
+        <input class="form-check-input" type="checkbox" id="show_cleared" name="show_cleared" value="1" {{ 'checked' if f.show_cleared }}>
+        <label class="form-check-label" for="show_cleared" title="IF flagged, RF confidently benign">cleared</label>
+      </div>
+      <button class="btn btn-sm btn-primary w-100" type="submit">Filter</button>
+    </div>
+  </div>
+  <div class="small text-muted mt-2">Dates filter on detection time. Flows scored below θ are counted but never stored, so they never appear here.</div>
+</form>
+
+<form method="post" action="{{ url_for('dashboard.bulk_status') }}">
+  {{ m.csrf() }}
+  <div class="d-flex gap-2 mb-2">
+    <select class="form-select form-select-sm w-auto" name="status" aria-label="New status">
+      {% for s in statuses %}<option value="{{ s }}">Mark {{ s.replace('_', ' ') }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Apply to selected</button>
+  </div>
+  <div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead class="table-light">
+      <tr>
+        <th><input class="form-check-input" type="checkbox" data-select-all="ids" aria-label="Select all"></th>
+        <th>#</th><th>Detected</th><th>Class</th><th>Severity</th><th>Source</th><th>Destination</th>
+        <th title="Isolation Forest anomaly score">Score</th><th title="Share of RF trees voting for the class">p</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for d in pagination.items %}
+      <tr>
+        <td><input class="form-check-input" type="checkbox" name="ids" value="{{ d.detection_id }}" aria-label="Select {{ d.detection_id }}"></td>
+        <td><a href="{{ url_for('dashboard.alert_detail', detection_id=d.detection_id) }}">{{ d.detection_id }}</a></td>
+        <td class="small text-nowrap">{{ d.detected_at|dt('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ d.predicted_class }}</td>
+        <td>{{ m.sev(d.severity) }}</td>
+        <td class="font-monospace small">{{ d.flow.src_ip }}{% if d.flow.src_port %}:{{ d.flow.src_port }}{% endif %}</td>
+        <td class="font-monospace small">{{ d.flow.dst_ip }}{% if d.flow.dst_port is not none %}:{{ d.flow.dst_port }}{% endif %}</td>
+        <td>{{ '%.3f'|format(d.anomaly_score) }}</td>
+        <td>{{ '%.2f'|format(d.confidence) if d.confidence is not none else '-' }}</td>
+        <td>{{ m.status(d.status) }}</td>
+        <td class="small">{% for a in d.actions %}<span class="badge text-bg-light border">{{ action_labels.get(a.action_type, a.action_type) }}</span> {% endfor %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11" class="text-muted">No alerts match.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{{ m.pager(pagination, 'dashboard.alerts', args) }}
+{% endblock %}

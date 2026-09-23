@@ -1,0 +1,26 @@
+{
+  "data_source": "synthetic",
+  "generator": "training/generate_synthetic_flows.py",
+  "seed": 7,
+  "rows": 6060,
+  "duplicates_injected": 60,
+  "label_counts": {
+    "BENIGN": 4674,
+    "DoS Hulk": 492,
+    "PortScan": 341,
+    "DDoS": 276,
+    "Web Attack – Brute Force": 26,
+    "Infiltration": 26,
+    "FTP-Patator": 25,
+    "SSH-Patator": 25,
+    "DoS slowloris": 25,
+    "DoS Slowhttptest": 25,
+    "DoS GoldenEye": 25,
+    "Heartbleed": 25,
+    "Web Attack – XSS": 25,
+    "Web Attack – Sql Injection": 25,
+    "Bot": 25
+  },
+  "generated_at": "2026-09-23T16:35:28",
+  "warning": "SYNTHETIC DATA - metrics computed on this file are not real evaluation results."
+}

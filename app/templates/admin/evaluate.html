@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Offline evaluation{% endblock %}
+{% block content %}
+<h1 class="h3">Offline evaluation</h1>
+<p class="text-muted">Upload a CICFlowMeter CSV (CICIDS2017 layout, the synthetic generator's output, or CICFlowMeter-V4
+  column names). It is scored synchronously by the hybrid pipeline: IF gate (θ = p{{ runtime.theta_percentile }}), then RF (τ = {{ runtime.tau }}).
+  Flagged flows are stored as alerts and passed to the response policy in <b>{{ runtime.enforcer_mode }}</b> mode.
+  If the file has a <code>Label</code> column, the results are also scored against it.</p>
+
+{% if not active_if %}<div class="alert alert-warning">No active models: detection cannot run yet.</div>{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <form class="card card-body" method="post" enctype="multipart/form-data" data-busy="Scoring flows…">
+      {{ m.csrf() }}
+      <div class="mb-3">
+        <label class="form-label" for="file">Flow CSV</label>
+        <input class="form-control" id="file" name="file" type="file" accept=".csv" required>
+        <div class="form-text">Up to {{ max_mb }} MB and {{ '{:,}'.format(max_rows) }} rows per file (single-worker web host).</div>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="persist" name="persist" checked>
+        <label class="form-check-label" for="persist">Store alerts and run the response policy</label>
+        <div class="form-text">Untick to only score the file (a dry run, e.g. for a labelled test set). Nothing but a summary is stored.</div>
+      </div>
+      <button class="btn btn-primary" type="submit" {{ 'disabled' if not active_if }}>Upload &amp; run detection</button>
+    </form>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Files on the server</h2>
+      <table class="table table-sm align-middle small mb-0">
+        <thead><tr><th>File</th><th>Kind</th><th>Size</th><th></th></tr></thead>
+        <tbody>
+        {% for f in files %}
+          <tr><td class="font-monospace">{{ f.name }}</td><td>{{ f.kind }}</td><td>{{ f.size_kb }} KB</td>
+            <td class="text-end text-nowrap">
+            {% if current_user.is_admin %}
+              <form method="post" action="{{ url_for('admin.evaluate_stored') }}" class="d-inline" data-busy="Scoring flows…">
+                {{ m.csrf() }}<input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="name" value="{{ f.name }}">
+                <input type="hidden" name="persist" value="on">
+                <button class="btn btn-sm btn-outline-primary" type="submit" {{ 'disabled' if not active_if }}>Run detection on this file</button>
+              </form>
+              {% if f.kind == 'upload' %}
+              <form method="post" action="{{ url_for('admin.evaluate_delete') }}" class="d-inline">
+                {{ m.csrf() }}<input type="hidden" name="name" value="{{ f.name }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Delete {{ f.name }}?">✕</button>
+              </form>
+              {% endif %}
+            {% endif %}
+            </td></tr>
+        {% else %}<tr><td colspan="4" class="text-muted">No stored files.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+
+<h2 class="h5 mt-4">Recent detection runs</h2>
+<table class="table table-sm small">
+  <thead><tr><th>When</th><th>File</th><th>Flows</th><th>Below θ</th><th>Cleared</th><th>Classified</th><th>Unknown</th><th>Stored</th><th></th></tr></thead>
+  <tbody>
+  {% for row, d in runs %}
+    <tr><td>{{ row.timestamp|dt('%Y-%m-%d %H:%M') }}</td><td class="font-monospace">{{ d.file }}</td><td>{{ '{:,}'.format(d.total) }}</td>
+      <td>{{ '{:,}'.format(d.below_threshold) }}</td><td>{{ d.cleared_false_alarm }}</td><td>{{ d.classified_attack }}</td><td>{{ d.unknown_anomaly }}</td>
+      <td>{{ 'yes' if d.persisted else 'dry run' }}</td>
+      <td><a href="{{ url_for('admin.evaluate_result', run_id=d.run_id) }}">results</a></td></tr>
+  {% else %}<tr><td colspan="9" class="text-muted">No runs yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

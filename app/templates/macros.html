@@ -1,0 +1,48 @@
+{% macro badge(text, kind) -%}
+  <span class="badge text-bg-{{ kind or 'secondary' }}">{{ text or '-' }}</span>
+{%- endmacro %}
+
+{% macro sev(value) -%}
+  {{ badge(value, severity_badge.get(value, 'secondary')) }}
+{%- endmacro %}
+
+{% macro status(value) -%}
+  {{ badge(value.replace('_', ' ') if value else value, status_badge.get(value, 'secondary')) }}
+{%- endmacro %}
+
+{% macro csrf() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
+
+{% macro pager(pagination, endpoint, args) -%}
+  {% if pagination.pages > 1 %}
+  <nav aria-label="pagination">
+    <ul class="pagination pagination-sm">
+      <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+        <a class="page-link" href="{{ url_for(endpoint, page=pagination.prev_num, **args) if pagination.has_prev else '#' }}">«</a>
+      </li>
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {{ 'active' if p == pagination.page }}"><a class="page-link" href="{{ url_for(endpoint, page=p, **args) }}">{{ p }}</a></li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+        <a class="page-link" href="{{ url_for(endpoint, page=pagination.next_num, **args) if pagination.has_next else '#' }}">»</a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
+  <div class="text-muted small">{{ pagination.total }} row(s)</div>
+{%- endmacro %}
+
+{% macro metric_row(name, m) -%}
+  <tr>
+    <td>{{ name }}</td>
+    <td>{{ '%.4f'|format(m.precision) }}</td>
+    <td>{{ '%.4f'|format(m.recall) }}</td>
+    <td>{{ '%.4f'|format(m.f1) }}</td>
+    <td>{{ '%.5f'|format(m.fpr) }}</td>
+  </tr>
+{%- endmacro %}

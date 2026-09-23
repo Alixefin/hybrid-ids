@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Evaluation report{% endblock %}
+{% macro systems_table(res) %}
+  <table class="table table-sm small">
+    <thead><tr><th>System</th><th>Precision</th><th>Recall</th><th>F1</th><th>FPR</th></tr></thead>
+    <tbody>
+      {{ m.metric_row('Isolation Forest alone (binary)', res.isolation_forest.binary) }}
+      {{ m.metric_row('Random Forest alone (binary)', res.random_forest.binary) }}
+      {{ m.metric_row('Hybrid (binary)', res.hybrid.binary) }}
+      {% if res.random_forest.macro %}{{ m.metric_row('Random Forest alone (macro)', res.random_forest.macro) }}{% endif %}
+      {% if res.hybrid.macro %}{{ m.metric_row('Hybrid (macro)', res.hybrid.macro) }}{% endif %}
+    </tbody>
+  </table>
+{% endmacro %}
+{% macro per_class_table(res) %}
+  <table class="table table-sm small">
+    <thead><tr><th>Class</th><th>Support</th><th>IF detection</th><th>RF P / R / F1 / FPR</th><th>Hybrid P / R / F1 / FPR</th></tr></thead>
+    <tbody>
+    {% for c, v in res.random_forest.per_class.items() %}
+      {% set h = res.hybrid.per_class.get(c) %}{% set i = res.isolation_forest.per_class.get(c, {}) %}
+      <tr><td>{{ c }}</td><td>{{ v.support }}</td>
+        <td>{{ (i.detection_rate if i.detection_rate is defined else i.false_positive_rate)|pct }}{% if c == 'Benign' %} FP{% endif %}</td>
+        <td>{{ '%.3f / %.3f / %.3f / %.4f'|format(v.precision, v.recall, v.f1, v.fpr) }}</td>
+        <td>{% if h %}{{ '%.3f / %.3f / %.3f / %.4f'|format(h.precision, h.recall, h.f1, h.fpr) }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+{% block content %}
+<h1 class="h3">Offline evaluation report</h1>
+<p class="text-muted small">Generated {{ r.generated_at }} by <code>training/evaluate.py</code> on
+  <b>{{ r.data_source }}</b> data ({{ '{:,}'.format(r.rows_after_cleaning) }} flows after cleaning).</p>
+{% if r.warning %}<div class="alert alert-warning fw-semibold">⚠ {{ r.warning }}</div>{% endif %}
+
+{% set P = r.protocols %}
+{% if P.A %}
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Protocol A: stratified random 70/15/15</h2>
+  <div class="row"><div class="col-lg-6">{{ systems_table(P.A) }}</div>
+    <div class="col-lg-6 small">
+      <p>Hybrid routing on the test set:
+        {% for k, v in P.A.hybrid.routes.items() %}{{ k.replace('_', ' ') }} <b>{{ '{:,}'.format(v) }}</b>{{ ', ' if not loop.last }}{% endfor %}.
+        θ = {{ P.A.theta }}, τ = {{ P.A.tau }}.</p>
+      {% if P.A.ablation_no_corr_filter %}
+      <p class="mb-1"><b>Ablation: without the correlation filter</b></p>
+      <table class="table table-sm"><tbody>
+        {{ m.metric_row('IF (binary)', P.A.ablation_no_corr_filter.isolation_forest.binary) }}
+        {{ m.metric_row('RF (binary)', P.A.ablation_no_corr_filter.random_forest.binary) }}
+        {{ m.metric_row('Hybrid (binary)', P.A.ablation_no_corr_filter.hybrid.binary) }}
+      </tbody></table>
+      {% endif %}
+    </div></div>
+  <h3 class="h6">Per class</h3>
+  {{ per_class_table(P.A) }}
+  <h3 class="h6">Sensitivity: θ percentile (τ fixed)</h3>
+  <table class="table table-sm small">
+    <thead><tr><th>θ pct</th><th>θ</th><th>IF benign flag rate</th><th>Hybrid P</th><th>Hybrid R</th><th>Hybrid F1</th><th>Hybrid FPR</th><th>Macro F1</th></tr></thead>
+    <tbody>{% for pct, s in P.A.sweep.theta_percentile.items() %}
+      <tr><td>{{ pct }}</td><td>{{ s.theta }}</td><td>{{ s.if_benign_flag_rate|pct(2) }}</td>
+        <td>{{ s.binary.precision }}</td><td>{{ s.binary.recall }}</td><td>{{ s.binary.f1 }}</td><td>{{ s.binary.fpr }}</td><td>{{ s.macro.f1 }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <h3 class="h6">Sensitivity: τ (θ fixed)</h3>
+  <table class="table table-sm small">
+    <thead><tr><th>τ</th><th>Hybrid P</th><th>Hybrid R</th><th>Hybrid F1</th><th>Macro F1</th><th>Unknown anomalies</th></tr></thead>
+    <tbody>{% for tau, s in P.A.sweep.tau.items() %}
+      <tr><td>{{ tau }}</td><td>{{ s.binary.precision }}</td><td>{{ s.binary.recall }}</td><td>{{ s.binary.f1 }}</td><td>{{ s.macro.f1 }}</td><td>{{ s.unknown_anomalies }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div></div>
+{% endif %}
+
+{% if P.B %}
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Protocol B: temporal (earliest 60% of each day → train/val, latest 40% → test)</h2>
+  {% if P.B.classes_absent_from_train %}<div class="alert alert-info small py-2">Classes in the test set never seen in training:
+    <b>{{ P.B.classes_absent_from_train|join(', ') }}</b></div>{% endif %}
+  <div class="row"><div class="col-lg-6">{{ systems_table(P.B) }}</div></div>
+  {{ per_class_table(P.B) }}
+</div></div>
+{% endif %}
+
+{% if P.C %}
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h5">Protocol C: leave-one-attack-family-out</h2>
+  <p class="small text-muted">For each attack family, the models are trained without it; the table shows what happens to that unseen family in the test set.</p>
+  <table class="table table-sm small">
+    <thead><tr><th>Held-out family</th><th>n</th><th>IF alone</th><th>RF alone</th><th>Hybrid</th>
+      <th>→ Unknown anomaly</th><th>→ other attack</th><th>→ cleared as benign</th><th>→ missed by gate</th></tr></thead>
+    <tbody>
+    {% for fam, f in P.C.folds.items() %}{% set o = f.held_out_outcome %}
+      <tr><td>{{ fam }}</td><td>{{ o.support }}</td><td>{{ o.if_alone_detection_rate|pct }}</td><td>{{ o.rf_alone_detection_rate|pct }}</td>
+        <td><b>{{ o.hybrid_detection_rate|pct }}</b></td><td>{{ o.raised_as_unknown_anomaly|pct }}</td><td>{{ o.flagged_as_other_attack|pct }}</td>
+        <td>{{ o.cleared_as_benign_by_rf|pct }}</td><td>{{ o.missed_by_if_gate|pct }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endif %}
+{% endblock %}

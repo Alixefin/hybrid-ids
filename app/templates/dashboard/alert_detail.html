@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Alert #{{ d.detection_id }}{% endblock %}
+{% block content %}
+{% set f = d.flow %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">Alert #{{ d.detection_id }}: {{ d.predicted_class }} {{ m.sev(d.severity) }}</h1>
+  <form method="post" action="{{ url_for('dashboard.set_status', detection_id=d.detection_id) }}" class="d-flex gap-2">
+    {{ m.csrf() }}
+    <span class="align-self-center">{{ m.status(d.status) }}</span>
+    <select class="form-select form-select-sm w-auto" name="status" aria-label="Status">
+      {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if d.status == s }}>{{ s.replace('_', ' ') }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-sm btn-primary" type="submit">Update status</button>
+  </form>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h6">Flow</h2>
+      <dl class="row small mb-0">
+        <dt class="col-5">Source</dt><dd class="col-7 font-monospace">{{ f.src_ip }}:{{ f.src_port }}</dd>
+        <dt class="col-5">Destination</dt><dd class="col-7 font-monospace">{{ f.dst_ip }}:{{ f.dst_port }}</dd>
+        <dt class="col-5">Protocol</dt><dd class="col-7">{{ {6: 'TCP (6)', 17: 'UDP (17)', 0: 'HOPOPT (0)'}.get(f.protocol, f.protocol) }}</dd>
+        <dt class="col-5">Captured at</dt><dd class="col-7">{{ f.captured_at|dt }}</dd>
+        <dt class="col-5">Flow ID</dt><dd class="col-7 font-monospace text-break">{{ meta.flow_id or '-' }}</dd>
+        <dt class="col-5">Source</dt><dd class="col-7">{{ f.source }} · {{ meta.upload or '-' }} (row {{ meta.row }})</dd>
+        {% if meta.repaired %}<dt class="col-5">Note</dt><dd class="col-7 text-warning">non-finite feature values were repaired (clipped) before scoring</dd>{% endif %}
+        {% if meta.ground_truth %}
+        <dt class="col-5">Ground truth</dt>
+        <dd class="col-7">{{ meta.ground_truth_label }} ({{ meta.ground_truth }})
+          {% if meta.ground_truth == d.predicted_class %}<span class="badge text-bg-success">correct</span>
+          {% else %}<span class="badge text-bg-warning">differs</span>{% endif %}
+        </dd>
+        {% endif %}
+      </dl>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h6">How the hybrid pipeline decided</h2>
+      <ol class="small mb-0">
+        <li><b>Isolation Forest</b>: anomaly score <code>{{ '%.4f'|format(d.anomaly_score) }}</code>
+          {% if model_theta %}≥ θ <code>{{ '%.4f'|format(model_theta) }}</code> (training-time θ){% endif %} → anomalous, sent to the RF.</li>
+        <li><b>Random Forest</b>: {{ meta.rf_class or '-' }} with
+          p = <code>{{ '%.2f'|format(d.confidence) if d.confidence is not none else '-' }}</code> of the trees voting for it (τ = {{ runtime.tau }}).</li>
+        <li><b>Route</b>: <code>{{ meta.route }}</code>
+          {% if meta.route == 'unknown_anomaly' %}: p &lt; τ, so the SOC is alerted and nothing is blocked automatically.
+          {% elif meta.route == 'cleared_false_alarm' %}: the RF confidently says benign, so this is a cleared false alarm.
+          {% else %}: p ≥ τ, so it went to the policy engine.{% endif %}</li>
+      </ol>
+      <div class="small text-muted mt-2">Models: IF #{{ d.if_model_id }}, RF #{{ d.rf_model_id }}
+        {% if d.if_model %}(run <code>{{ d.if_model.run_id }}</code>, {{ d.if_model.data_source }}){% endif %}</div>
+    </div></div>
+
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h6">Response actions</h2>
+      <table class="table table-sm small mb-2">
+        <thead><tr><th>#</th><th>Action</th><th>Target</th><th>Status</th><th>Expires</th></tr></thead>
+        <tbody>
+        {% for a in d.actions %}
+          <tr>
+            <td><a href="{{ url_for('responses.index', ip=a.target_ip) }}">{{ a.action_id }}</a></td>
+            <td>{{ action_labels.get(a.action_type, a.action_type) }}{% if a.approved_by %} <span class="badge text-bg-dark" title="manually approved">manual</span>{% endif %}</td>
+            <td class="font-monospace">{{ a.target_ip }}</td>
+            <td>{{ m.status(a.status) }} <span class="text-muted">{{ a.mode }}</span></td>
+            <td>{{ a.expires_at|dt('%m-%d %H:%M') }}</td>
+          </tr>
+          <tr><td></td><td colspan="4"><pre class="small mb-0 text-wrap">{{ a.outcome }}</pre></td></tr>
+        {% else %}
+          <tr><td colspan="5" class="text-muted">No action for this detection. Duplicates of an action already active for the same target are suppressed.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if current_user.is_admin and d.predicted_class != 'Benign' %}
+      <details>
+        <summary class="small">Manual response (admin approval)</summary>
+        <form method="post" action="{{ url_for('responses.manual', detection_id=d.detection_id) }}" class="row g-2 mt-1">
+          {{ m.csrf() }}
+          <div class="col-5">
+            <select class="form-select form-select-sm" name="action_type" aria-label="Action">
+              {% for t in action_types %}<option value="{{ t }}">{{ action_labels[t] }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-4">
+            <input class="form-control form-control-sm font-monospace" name="target_ip" value="{{ f.src_ip }}" aria-label="Target IP">
+          </div>
+          <div class="col-3">
+            <input class="form-control form-control-sm" name="duration_min" type="number" min="0" max="1440" value="60" aria-label="Minutes">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Execute this action ({{ runtime.enforcer_mode }} mode)?">Approve &amp; execute</button>
+            <span class="small text-muted">Whitelist and IP validation still apply. Recorded with you as approver.</span>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+    </div></div>
+
+    {% if related %}
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Other alerts from {{ f.src_ip }}</h2>
+      <ul class="small mb-0">
+        {% for r in related %}<li><a href="{{ url_for('dashboard.alert_detail', detection_id=r.detection_id) }}">#{{ r.detection_id }}</a> {{ r.predicted_class }}, {{ r.detected_at|dt('%m-%d %H:%M') }}</li>{% endfor %}
+      </ul>
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Flow features <span class="text-muted small">(<b>bold</b> = used by the models)</span></h2>
+      <div class="table-responsive feature-table">
+      <table class="table table-sm small mb-0">
+        <tbody>
+        {% for k, v in features.items() %}
+          <tr class="{{ 'fw-semibold' if k in selected else 'text-muted' }}"><td>{{ k }}</td><td class="text-end font-monospace">{{ v }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

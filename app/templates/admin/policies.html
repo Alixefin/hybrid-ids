@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Policy &amp; whitelist{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">Response policy</h1>
+  <form method="post" action="{{ url_for('admin.policy_reset') }}">
+    {{ m.csrf() }}
+    <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Replace every policy rule with the default table?">Reset to default table</button>
+  </form>
+</div>
+<p class="small text-muted">For a detection of class C with confidence p, the enabled rules of C with the highest
+  <i>min confidence ≤ p</i> form the tier that runs; if none match, only an alert is raised.
+  Repeat offences from the same address within 24 h double the duration, capped at 24 h (1440 min). Duration 0 = no expiry.
+  Unknown anomalies can never auto-block.</p>
+
+<div class="table-responsive mb-5">
+<table class="table table-sm align-middle">
+  <thead class="table-light"><tr><th>#</th><th>Threat class</th><th>Severity</th><th>Min p</th><th>Action</th><th>Duration (min)</th><th>Enabled</th><th></th></tr></thead>
+  <tbody>
+  {% for p in rows %}
+    <tr>
+      <td><form id="pf{{ p.policy_id }}" method="post" action="{{ url_for('admin.policy_update', policy_id=p.policy_id) }}">{{ m.csrf() }}</form>{{ p.policy_id }}</td>
+      <td><select form="pf{{ p.policy_id }}" class="form-select form-select-sm" name="threat_class" aria-label="Class">
+        {% for c in classes %}<option {{ 'selected' if p.threat_class == c }}>{{ c }}</option>{% endfor %}</select></td>
+      <td><select form="pf{{ p.policy_id }}" class="form-select form-select-sm" name="severity" aria-label="Severity">
+        {% for s in severities %}<option {{ 'selected' if p.severity == s }}>{{ s }}</option>{% endfor %}</select></td>
+      <td><input form="pf{{ p.policy_id }}" class="form-control form-control-sm" name="min_confidence" type="number" step="0.01" min="0" max="1" value="{{ p.min_confidence }}" aria-label="Min confidence"></td>
+      <td><select form="pf{{ p.policy_id }}" class="form-select form-select-sm" name="action_type" aria-label="Action">
+        {% for t in action_types %}<option value="{{ t }}" {{ 'selected' if p.action_type == t }}>{{ action_labels[t] }}</option>{% endfor %}</select></td>
+      <td><input form="pf{{ p.policy_id }}" class="form-control form-control-sm" name="duration_min" type="number" min="0" max="1440" value="{{ p.duration_min }}" aria-label="Duration"></td>
+      <td><input form="pf{{ p.policy_id }}" class="form-check-input" type="checkbox" name="enabled" {{ 'checked' if p.enabled }} aria-label="Enabled"></td>
+      <td class="text-nowrap">
+        <button form="pf{{ p.policy_id }}" class="btn btn-sm btn-outline-primary" type="submit">Save</button>
+        <button form="pf{{ p.policy_id }}" class="btn btn-sm btn-outline-danger" type="submit" name="delete" value="1" data-confirm="Delete rule #{{ p.policy_id }}?">✕</button>
+      </td>
+    </tr>
+  {% endfor %}
+    <tr class="table-light">
+      <td><form id="pf-new" method="post" action="{{ url_for('admin.policy_create') }}">{{ m.csrf() }}</form>new</td>
+      <td><select form="pf-new" class="form-select form-select-sm" name="threat_class" aria-label="Class">{% for c in classes %}<option>{{ c }}</option>{% endfor %}</select></td>
+      <td><select form="pf-new" class="form-select form-select-sm" name="severity" aria-label="Severity">{% for s in severities %}<option>{{ s }}</option>{% endfor %}</select></td>
+      <td><input form="pf-new" class="form-control form-control-sm" name="min_confidence" type="number" step="0.01" min="0" max="1" value="0.8" aria-label="Min confidence"></td>
+      <td><select form="pf-new" class="form-select form-select-sm" name="action_type" aria-label="Action">{% for t in action_types %}<option value="{{ t }}">{{ action_labels[t] }}</option>{% endfor %}</select></td>
+      <td><input form="pf-new" class="form-control form-control-sm" name="duration_min" type="number" min="0" max="1440" value="30" aria-label="Duration"></td>
+      <td><input form="pf-new" class="form-check-input" type="checkbox" name="enabled" checked aria-label="Enabled"></td>
+      <td><button form="pf-new" class="btn btn-sm btn-primary" type="submit">Add rule</button></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2 class="h4">Whitelist</h2>
+<p class="small text-muted">Addresses and networks here are <b>never</b> blocked, rate-limited, disconnected or quarantined. The policy engine and the enforcer both check this list independently. Alerts are still raised.</p>
+<div class="row">
+  <div class="col-lg-7">
+    <table class="table table-sm align-middle">
+      <thead class="table-light"><tr><th>#</th><th>IP / CIDR</th><th>Reason</th><th>Added</th><th></th></tr></thead>
+      <tbody>
+      {% for w in whitelist %}
+        <tr><td>{{ w.entry_id }}</td><td class="font-monospace">{{ w.ip_or_cidr }}</td><td>{{ w.reason }}</td><td class="small">{{ w.added_at|dt('%Y-%m-%d') }}</td>
+          <td><form method="post" action="{{ url_for('admin.whitelist_delete', entry_id=w.entry_id) }}">{{ m.csrf() }}
+            <button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Remove {{ w.ip_or_cidr }} from the whitelist?">Remove</button></form></td></tr>
+      {% else %}<tr><td colspan="5" class="text-muted">Whitelist is empty.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="col-lg-5">
+    <form method="post" action="{{ url_for('admin.whitelist_add') }}" class="card card-body">
+      {{ m.csrf() }}
+      <div class="mb-2"><label class="form-label small" for="wl">IP address or CIDR</label>
+        <input class="form-control font-monospace" id="wl" name="ip_or_cidr" placeholder="10.0.0.0/8" required></div>
+      <div class="mb-2"><label class="form-label small" for="wr">Reason</label>
+        <input class="form-control" id="wr" name="reason" placeholder="Core router" maxlength="255"></div>
+      <button class="btn btn-primary" type="submit">Add to whitelist</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

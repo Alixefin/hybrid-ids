@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">Audit log</h1>
+  <form class="d-flex gap-2" method="get">
+    <input class="form-control form-control-sm" name="q" value="{{ term }}" placeholder="auth.login_failed, response., 172.16…" aria-label="Search">
+    <button class="btn btn-sm btn-primary" type="submit">Search</button>
+  </form>
+</div>
+<div class="table-responsive">
+<table class="table table-sm small align-middle">
+  <thead class="table-light"><tr><th>#</th><th>Time (UTC)</th><th>User</th><th>Event</th></tr></thead>
+  <tbody>
+  {% for e in pagination.items %}
+    <tr><td>{{ e.log_id }}</td><td class="text-nowrap">{{ e.timestamp|dt }}</td>
+      <td>{{ e.user.username if e.user else 'system' }}</td>
+      <td class="font-monospace text-break">{{ e.event }}</td></tr>
+  {% else %}<tr><td colspan="4" class="text-muted">No events.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{{ m.pager(pagination, 'admin.audit_log', {'q': term} if term else {}) }}
+{% endblock %}

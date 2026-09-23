@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Security overview</h1>
+  <a class="btn btn-primary" href="{{ url_for('admin.evaluate') }}">Score a flow CSV →</a>
+</div>
+
+{% if not active_if %}
+<div class="alert alert-warning">
+  No active models. Train them with <code>python -m training.train_models</code>, then
+  {% if current_user.is_admin %}<a href="{{ url_for('admin.models') }}">register them</a>{% else %}ask an admin to register them{% endif %}.
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  {% set tiles = [
+    ('Flows analysed', '{:,}'.format(totals.total), totals.runs ~ ' detection run(s)', 'primary'),
+    ('Flagged detections', '{:,}'.format(flagged_count), '{:,}'.format(new_count) ~ ' new / unreviewed', 'danger'),
+    ('Unknown anomalies', '{:,}'.format(unknown_count), 'alert only, no auto-block', 'warning'),
+    ('Active blocking actions', '{:,}'.format(active_blocks), (runtime.enforcer_mode ~ ' mode'), 'info'),
+  ] %}
+  {% for title, value, sub, color in tiles %}
+  <div class="col-6 col-lg-3">
+    <div class="card stat-card stat-{{ color }} h-100">
+      <div class="card-body">
+        <div class="text-muted small text-uppercase">{{ title }}</div>
+        <div class="fs-3 fw-semibold">{{ value }}</div>
+        <div class="small text-muted">{{ sub }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Detections by threat class</h2>
+      {% if charts.by_class.values %}<div class="chart-box"><canvas id="chartByClass"></canvas></div>
+      {% else %}<p class="text-muted small">No detections yet.</p>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Hybrid decision routing (all runs)</h2>
+      {% if totals.total %}<div class="chart-box"><canvas id="chartRoutes"></canvas></div>
+      {% else %}<p class="text-muted small">Run a detection to populate.</p>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Response actions by type</h2>
+      {% if charts.by_action.values %}<div class="chart-box"><canvas id="chartByAction"></canvas></div>
+      {% else %}<p class="text-muted small">No actions yet.</p>{% endif %}
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card h-100"><div class="card-body">
+      <div class="d-flex justify-content-between">
+        <h2 class="h6">Latest alerts</h2>
+        <a class="small" href="{{ url_for('dashboard.alerts') }}">All alerts →</a>
+      </div>
+      <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>#</th><th>Class</th><th>Severity</th><th>Source → Destination</th><th>p</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for d in recent %}
+          <tr>
+            <td><a href="{{ url_for('dashboard.alert_detail', detection_id=d.detection_id) }}">{{ d.detection_id }}</a></td>
+            <td>{{ d.predicted_class }}</td>
+            <td>{{ m.sev(d.severity) }}</td>
+            <td class="font-monospace small">{{ d.flow.src_ip }} → {{ d.flow.dst_ip }}:{{ d.flow.dst_port }}</td>
+            <td>{{ '%.2f'|format(d.confidence) if d.confidence is not none else '-' }}</td>
+            <td>{{ m.status(d.status) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-muted">No alerts yet - upload a CSV on the Offline evaluation page.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Detections per capture day</h2>
+      {% if charts.per_day.values %}<div class="chart-box"><canvas id="chartPerDay"></canvas></div>{% endif %}
+      <h2 class="h6 mt-3">Top offending sources</h2>
+      <ul class="list-group list-group-flush small">
+        {% for ip, n in top_sources %}
+          <li class="list-group-item d-flex justify-content-between px-0">
+            <a class="font-monospace" href="{{ url_for('dashboard.alerts', ip=ip) }}">{{ ip or 'unknown' }}</a><span>{{ n }}</span>
+          </li>
+        {% else %}<li class="list-group-item px-0 text-muted">-</li>{% endfor %}
+      </ul>
+    </div></div>
+  </div>
+</div>
+
+<script type="application/json" id="dashboard-data">{{ charts|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js"></script>{% endblock %}

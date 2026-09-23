@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Response log{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">Response actions</h1>
+  {% if current_user.is_admin %}
+  <form method="post" action="{{ url_for('responses.expire_now') }}">
+    {{ m.csrf() }}
+    <button class="btn btn-outline-primary btn-sm" type="submit"
+            title="Releases every action whose expiry time has passed (the job PythonAnywhere cannot run continuously)">
+      Run expiry job now</button>
+  </form>
+  {% endif %}
+</div>
+
+<form class="card card-body mb-3" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label small" for="action_type">Action</label>
+      <select class="form-select form-select-sm" id="action_type" name="action_type">
+        <option value="">All</option>
+        {% for t in action_types %}<option value="{{ t }}" {{ 'selected' if f.action_type == t }}>{{ action_labels[t] }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small" for="status">Status</label>
+      <select class="form-select form-select-sm" id="status" name="status">
+        <option value="">All</option>
+        {% for s in statuses %}<option {{ 'selected' if f.status == s }}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small" for="mode">Mode</label>
+      <select class="form-select form-select-sm" id="mode" name="mode">
+        <option value="">All</option>
+        <option {{ 'selected' if f.mode == 'simulate' }}>simulate</option>
+        <option {{ 'selected' if f.mode == 'enforce' }}>enforce</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small" for="ip">Target IP contains</label>
+      <input class="form-control form-control-sm" id="ip" name="ip" value="{{ f.ip }}">
+    </div>
+    <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" type="submit">Filter</button></div>
+  </div>
+</form>
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead class="table-light">
+    <tr><th>#</th><th>Executed</th><th>Action</th><th>Target</th><th>Detection</th><th>Policy</th><th>Mode</th><th>Status</th><th>Expires</th><th>Outcome</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for a in pagination.items %}
+    <tr>
+      <td>{{ a.action_id }}</td>
+      <td class="small text-nowrap">{{ a.executed_at|dt('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ action_labels.get(a.action_type, a.action_type) }}{% if a.approver %}<br><span class="badge text-bg-dark">by {{ a.approver.username }}</span>{% endif %}</td>
+      <td class="font-monospace small">{{ a.target_ip }}</td>
+      <td>{% if a.detection_id %}<a href="{{ url_for('dashboard.alert_detail', detection_id=a.detection_id) }}">#{{ a.detection_id }}</a>{% else %}-{% endif %}</td>
+      <td>{{ a.policy_id or '-' }}</td>
+      <td>{{ a.mode }}</td>
+      <td>{{ m.status(a.status) }}</td>
+      <td class="small text-nowrap">{{ a.expires_at|dt('%m-%d %H:%M') }}</td>
+      <td><details><summary class="small">view</summary><pre class="small text-wrap mb-0 outcome">{{ a.outcome }}</pre></details></td>
+      <td>
+        {% if current_user.is_admin and a.status in ('active', 'simulated') and a.action_type != 'alert' %}
+        <form method="post" action="{{ url_for('responses.release', action_id=a.action_id) }}">
+          {{ m.csrf() }}
+          <button class="btn btn-sm btn-outline-success" type="submit" data-confirm="Release action #{{ a.action_id }} on {{ a.target_ip }}?">Release</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="11" class="text-muted">No response actions yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ m.pager(pagination, 'responses.index', args) }}
+{% endblock %}

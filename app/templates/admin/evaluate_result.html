@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "macros.html" as m with context %}
+{% block title %}Detection results{% endblock %}
+{% block content %}
+{% set c = s.counts %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h3 mb-0">Detection results: <span class="font-monospace fs-5">{{ s.file }}</span></h1>
+  <div class="d-flex gap-2">
+    {% if s.persisted %}<a class="btn btn-sm btn-primary" href="{{ url_for('dashboard.alerts') }}">View alerts</a>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('responses.index') }}">View response log</a>{% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.evaluate') }}">Score another file</a>
+  </div>
+</div>
+<p class="text-muted small">Run <code>{{ s.run_id }}</code> · {{ s.started_at }} UTC · {{ s.elapsed_s.total }} s
+  (detection {{ s.elapsed_s.detection }} s) · models <code>{{ s.models.run_id }}</code> ({{ s.data_source }}) ·
+  θ = {{ s.theta }} (p{{ s.theta_percentile }}) · τ = {{ s.tau }} · {{ s.enforcer_mode }} mode ·
+  {{ 'stored' if s.persisted else 'dry run, nothing stored' }}</p>
+{% if s.data_source == 'synthetic' %}<div class="alert alert-warning py-2 small">⚠ The active models were trained on synthetic data. These results demonstrate the pipeline only.</div>{% endif %}
+{% for n in s.notes %}<div class="alert alert-info py-1 small">{{ n }}</div>{% endfor %}
+
+<div class="row g-3 mb-3">
+  {% for label, value, color in [('Flows scored', c.total, 'primary'), ('Below θ (benign, counted only)', c.below_threshold, 'success'),
+       ('Cleared false alarms', c.cleared_false_alarm, 'secondary'), ('Classified attacks', c.classified_attack, 'danger'),
+       ('Unknown anomalies', c.unknown_anomaly, 'warning'), ('Repaired rows (inf/NaN)', c.repaired_rows, 'light')] %}
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="card stat-card stat-{{ color }} h-100"><div class="card-body py-2">
+      <div class="small text-muted">{{ label }}</div><div class="fs-4 fw-semibold">{{ '{:,}'.format(value) }}</div>
+    </div></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Flagged flows by class</h2>
+      {% if s.flagged_by_class %}<div class="chart-box"><canvas id="chartResultClasses"></canvas></div>{% else %}<p class="text-muted small">Nothing flagged.</p>{% endif %}
+      <h2 class="h6 mt-3">Top flagged sources</h2>
+      <ul class="small mb-0">{% for ip, n in s.top_sources.items() %}<li class="font-monospace">{{ ip }}: {{ n }}</li>{% else %}<li>-</li>{% endfor %}</ul>
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Automated response</h2>
+      {% if s.persisted %}
+      <ul class="small">
+        {% for t, n in s.actions.executed.items() %}<li>{{ action_labels.get(t, t) }}: <b>{{ n }}</b></li>{% else %}<li>No actions.</li>{% endfor %}
+      </ul>
+      <p class="small text-muted mb-0">{{ s.actions.suppressed_duplicates }} duplicate action(s) suppressed (already active for the same target) ·
+        {{ s.actions.skipped }} not executed (whitelisted / invalid target) · {{ s.actions.alerts_sent }} SOC alert(s) raised (one per class and target).</p>
+      {% else %}<p class="small text-muted">Dry run: no actions taken.</p>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Against the file's ground-truth labels</h2>
+      {% if s.ground_truth %}{% set g = s.ground_truth %}
+        <table class="table table-sm small">
+          <thead><tr><th></th><th>P</th><th>R</th><th>F1</th><th>FPR</th></tr></thead>
+          <tbody>
+            {{ m.metric_row('IF gate (binary)', g.if_binary) }}
+            {{ m.metric_row('Hybrid (binary)', g.hybrid_binary) }}
+            {{ m.metric_row('Hybrid (macro)', g.hybrid_multiclass.macro) }}
+          </tbody>
+        </table>
+      {% else %}<p class="small text-muted">No <code>Label</code> column in this file.</p>{% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% if s.ground_truth %}{% set cm = s.ground_truth.hybrid_multiclass.confusion_matrix %}
+<div class="card mt-3"><div class="card-body">
+  <h2 class="h6">Hybrid confusion matrix <span class="small text-muted">(rows = true class, columns = hybrid output)</span></h2>
+  <div class="table-responsive">
+  <table class="table table-sm table-bordered small text-center mb-2">
+    <thead><tr><th></th>{% for l in cm.labels %}<th>{{ l }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for row in cm.matrix %}{% set i = loop.index0 %}
+      <tr><th class="text-start">{{ cm.labels[i] }}</th>
+        {% for v in row %}<td class="{{ 'table-success' if loop.index0 == i and v else ('table-danger' if v else '') }}">{{ v }}</td>{% endfor %}</tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+  <table class="table table-sm small">
+    <thead><tr><th>Class</th><th>Support</th><th>Precision</th><th>Recall</th><th>F1</th><th>FPR</th></tr></thead>
+    <tbody>{% for cl, v in s.ground_truth.hybrid_multiclass.per_class.items() %}
+      <tr><td>{{ cl }}</td><td>{{ v.support }}</td><td>{{ v.precision }}</td><td>{{ v.recall }}</td><td>{{ v.f1 }}</td><td>{{ v.fpr }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div></div>
+{% endif %}
+<script type="application/json" id="result-data">{{ {'labels': s.flagged_by_class.keys()|list, 'values': s.flagged_by_class.values()|list}|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.js"></script>{% endblock %}

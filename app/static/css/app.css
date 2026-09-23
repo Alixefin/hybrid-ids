@@ -1,0 +1,20 @@
+body { background: #f5f6f8; }
+.card { border-radius: .6rem; }
+.stat-card .fs-3, .stat-card .fs-4 { line-height: 1.2; }
+.synthetic-banner { background: #fff3cd; color: #664d03; border-top: 2px solid #ffda6a; border-bottom: 2px solid #ffda6a; }
+.feature-table { max-height: 75vh; overflow-y: auto; }
+pre.outcome, pre.text-wrap { white-space: pre-wrap; word-break: break-word; max-width: 42rem; }
+.table td, .table th { vertical-align: middle; }
+details > summary { cursor: pointer; }
+details > summary.btn { list-style: none; }
+.busy-overlay { position: fixed; inset: 0; background: rgba(255,255,255,.75); display: flex;
+  align-items: center; justify-content: center; z-index: 2000; font-size: 1.1rem; }
+.stat-card { border-left: 4px solid var(--accent, #6c757d); }
+.stat-primary { --accent: var(--bs-primary); }
+.stat-danger { --accent: var(--bs-danger); }
+.stat-warning { --accent: var(--bs-warning); }
+.stat-info { --accent: var(--bs-info); }
+.stat-success { --accent: var(--bs-success); }
+.stat-secondary { --accent: var(--bs-secondary); }
+.stat-light { --accent: #ced4da; }
+.chart-box { position: relative; height: 240px; }
